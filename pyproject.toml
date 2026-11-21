@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crypto-market-pipeline"
+version = "0.1.0"
+description = "Public market-data collectors for Bybit and OKX"
+requires-python = ">=3.11"
+dependencies = [
+    "aiokafka>=0.10",
+    "websockets>=13.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+market-collector = "crypto_market_pipeline.main:run"
+
+[tool.setuptools.packages.find]
+where = ["src"]
