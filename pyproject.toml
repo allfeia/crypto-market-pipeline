@@ -9,6 +9,8 @@ description = "Public market-data collectors for Bybit and OKX"
 requires-python = ">=3.11"
 dependencies = [
     "aiokafka>=0.10",
+    "minio>=7.2",
+    "pyarrow>=18.0",
     "websockets>=13.0",
 ]
 
@@ -19,6 +21,12 @@ dev = [
 
 [project.scripts]
 market-collector = "crypto_market_pipeline.main:run"
+bybit-collector = "crypto_market_pipeline.main:run_bybit"
+okx-collector = "crypto_market_pipeline.main:run_okx"
+market-archiver = "crypto_market_pipeline.archiver:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
