@@ -73,3 +73,23 @@ def test_normalize_bybit_orderbook_snapshot() -> None:
     assert events[0].event_type == "orderbook"
     assert events[0].payload["message_type"] == "snapshot"
     assert events[0].payload["bids"] == [["67120.0", "1.0"]]
+
+
+def test_orderbook_event_id_is_stable_for_the_same_exchange_update() -> None:
+    message = {
+        "topic": "orderbook.50.BTCUSDT",
+        "ts": 1763633723421,
+        "type": "delta",
+        "data": {
+            "s": "BTCUSDT",
+            "u": 42,
+            "seq": 100,
+            "b": [],
+            "a": [],
+        },
+    }
+
+    first = normalize_bybit_message(message, "BTCUSDT")[0]
+    second = normalize_bybit_message(message, "BTCUSDT")[0]
+
+    assert first.event_id == second.event_id
