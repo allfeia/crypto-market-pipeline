@@ -9,29 +9,31 @@ flowchart TB
         OKX_REST[OKX REST API]
     end
 
-    subgraph COLLECTORS[Логический слой: collector-сервисы]
+    subgraph COLLECTORS[Collector-сервисы]
         B_COL[bybit-collector<br/>trades task<br/>orderbook task]
         O_COL[okx-collector<br/>trades task<br/>orderbook task]
         BACKFILL[REST backfill job]
     end
 
-    subgraph STREAM[Логический слой: поток событий]
+    subgraph STREAM[Поток событий]
         K[Kafka<br/>market.trades<br/>market.orderbook]
+        G1[consumer group<br/>market-raw-minio]
+        G2[consumer group<br/>market-raw-clickhouse]
     end
 
-    subgraph RAW[Логический слой: raw storage]
-        A[market-archiver<br/>Kafka consumer]
-        M[MinIO S3<br/>Parquet]
-        IC[Iceberg Catalog]
+    subgraph RAW[Raw storage]
+        A[market-raw-minio<br/>Kafka consumer]
+        M[MinIO S3<br/>raw Parquet]
+        CW[market-raw-clickhouse<br/>Kafka consumer]
+        CR[ClickHouse raw<br/>raw.events]
     end
 
-    subgraph TRANSFORM[Логический слой: SQL и модели]
-        T[Trino]
-        D[dbt]
-        C[ClickHouse<br/>clean marts]
+    subgraph ANALYTICS[Analytics layer]
+        D[dbt-clickhouse]
+        C[ClickHouse analytics<br/>candles, spread, arbitrage]
     end
 
-    subgraph ORCHESTRATION[Логический слой: оркестрация и уведомления]
+    subgraph ORCHESTRATION[Оркестрация и уведомления]
         AIR[Airflow]
         TG[Telegram]
     end
@@ -45,15 +47,18 @@ flowchart TB
     O_COL -->|Нормализованные события| K
     BACKFILL -->|События с тем же контрактом| K
 
-    K -->|Оба topic| A
-    A -->|Raw Parquet| M
-    M -->|Table metadata| IC
-    IC -->|Catalog и snapshots| T
-    M -->|Parquet через S3| T
-    T -->|SQL relations| D
-    D -->|Свечи, spread, arbitrage windows| C
-    AIR -->|Запускает dbt и backfill| D
-    AIR -->|Запрашивает gap recovery| BACKFILL
+    K -->|Полный поток| G1
+    G1 --> A
+    A -->|Raw Parquet<br/>commit после записи| M
+
+    K -->|Полный поток независимо| G2
+    G2 --> CW
+    CW -->|Raw events<br/>commit после вставки| CR
+
+    CR -->|Raw relations| D
+    D -->|Analytics models| C
+    AIR -->|Запускает dbt и тесты| D
     C -->|Порог спреда| AIR
     AIR -->|Alert| TG
+    AIR -->|Запрашивает gap recovery| BACKFILL
 ```

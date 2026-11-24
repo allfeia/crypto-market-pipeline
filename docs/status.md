@@ -9,11 +9,15 @@
 - UUID5 `event_id`.
 - Kafka topics `market.trades` и `market.orderbook`.
 - Автоматическое создание Kafka topics через одноразовый `kafka-init` service.
-- Один raw archiver, читающий оба topic.
+- Один MinIO raw archiver, читающий оба topic.
 - Raw Parquet partitioning выполняется только по UTC date и hour. `exchange`, `event_type` и `symbol` хранятся колонками.
 - MinIO sink.
 - Docker Compose services для Kafka, MinIO, Bybit collector и OKX collector.
 - Базовые unit-тесты и CI.
+- ClickHouse raw writer с consumer group `market-raw-clickhouse`.
+- ClickHouse raw schema на `ReplacingMergeTree(ingest_time)` с TTL 7 дней.
+- dbt staging и аналитические модели свечей и межбиржевого spread.
+- 18 dbt-тестов not-null, unique и сверки аналитических моделей проходят на чистом локальном raw-потоке.
 
 ## Частично реализовано
 
@@ -24,13 +28,12 @@
 
 ## Не реализовано
 
-- Iceberg Catalog.
-- Trino.
-- dbt staging, intermediate и mart models.
-- ClickHouse.
+- Production-проверка ClickHouse raw writer и масштабирование.
+- Production-проверка dbt-сверок на длительном потоке и при late events.
 - Airflow DAGs.
 - Telegram alerts.
 - DLQ для некорректных Kafka-сообщений.
 - Production deployment и мониторинг.
+- Manifest-файлы и служебная сверка MinIO и ClickHouse.
 
 Документация не должна считать планируемые компоненты реализованными, пока они не появились в коде, конфигурации и тестах.

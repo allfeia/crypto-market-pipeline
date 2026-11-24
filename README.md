@@ -7,19 +7,15 @@
 ```text
 Bybit / OKX WebSocket
         ↓
-Python producers
+Python collectors
         ↓
 Kafka
-        ↓
-Kafka archiver
-        ↓
-MinIO + Parquet
-        ↓
-Iceberg + Trino
-        ↓
-dbt
-        ↓
-ClickHouse clean marts
+       ↙   ↘
+MinIO raw  ClickHouse raw
+                ↓
+           dbt-clickhouse
+                ↓
+       ClickHouse analytics marts
 ```
 
 Sequence-диаграмма находится в [docs/sequence-diagram.md](docs/sequence-diagram.md), deployment diagram — в [docs/deployment.md](docs/deployment.md).
@@ -34,7 +30,9 @@ Sequence-диаграмма находится в [docs/sequence-diagram.md](doc
 - JSONL sink для локальной проверки.
 - Kafka sink с topics `market.trades` и `market.orderbook`.
 - Kafka consumer для записи событий в Parquet. Partition path включает только UTC date и hour. Поля exchange, event_type и symbol хранятся внутри Parquet.
-- Kafka, MinIO и два collector-контейнера в Docker Compose.
+- Две независимые Kafka consumer groups для MinIO и ClickHouse raw.
+- Kafka, MinIO, ClickHouse и два collector-контейнера в Docker Compose.
+- ClickHouse raw writer и dbt-модели свечей и межбиржевого spread.
 
 ## Установка
 
@@ -45,7 +43,7 @@ Sequence-диаграмма находится в [docs/sequence-diagram.md](doc
 
 ## Сбор событий в Kafka
 
-Запусти два независимых процесса, по одному на биржу:
+Запустить два независимых процесса, по одному на биржу:
 
 ```bash
 .venv/bin/bybit-collector \
@@ -96,6 +94,26 @@ Kafka доступен на `localhost:9092`. Внутри Compose collectors п
 ```bash
 docker compose logs -f bybit-collector okx-collector
 ```
+
+## ClickHouse и dbt
+
+ClickHouse хранит две группы таблиц. `raw.market_events` получает полный поток через отдельную Kafka consumer group, а dbt читает raw-слой и записывает свечи и межбиржевой spread в analytics-таблицы.
+
+Запустить ClickHouse и raw writer вместе с Kafka:
+
+```bash
+docker compose up -d --build kafka minio clickhouse bybit-collector okx-collector clickhouse-raw-writer
+```
+
+Для запуска dbt установи зависимости из `analytics/requirements.txt`, скопируй `analytics/profiles.yml.example` в `~/.dbt/profiles.yml`, затем выполни:
+
+```bash
+cd analytics
+dbt run
+dbt test
+```
+
+Raw ClickHouse хранится 7 дней. MinIO остаётся долговременным raw-архивом.
 
 ## Тесты
 
