@@ -1,0 +1,17 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    tables:
+      - name: market_events
+        description: Normalized market events mirrored from Kafka into ClickHouse.
+        columns:
+          - name: event_id
+            tests: [not_null]
+          - name: exchange
+            tests: [not_null]
+          - name: event_type
+            tests: [not_null]
+          - name: event_time
+            tests: [not_null]

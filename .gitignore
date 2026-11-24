@@ -8,3 +8,5 @@ __pycache__/
 data/
 .env
 .DS_Store
+analytics/target/
+analytics/logs/
