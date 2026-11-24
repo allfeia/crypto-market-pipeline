@@ -9,6 +9,7 @@ description = "Public market-data collectors for Bybit and OKX"
 requires-python = ">=3.11"
 dependencies = [
     "aiokafka>=0.10",
+    "clickhouse-connect>=0.8",
     "minio>=7.2",
     "pyarrow>=18.0",
     "websockets>=13.0",
@@ -24,6 +25,7 @@ market-collector = "crypto_market_pipeline.main:run"
 bybit-collector = "crypto_market_pipeline.main:run_bybit"
 okx-collector = "crypto_market_pipeline.main:run_okx"
 market-archiver = "crypto_market_pipeline.archiver:run"
+clickhouse-raw-writer = "crypto_market_pipeline.clickhouse_writer:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]

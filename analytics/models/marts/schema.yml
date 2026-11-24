@@ -1,0 +1,17 @@
+version: 2
+
+models:
+  - name: fct_candles
+    columns:
+      - name: exchange
+        tests: [not_null]
+      - name: symbol
+        tests: [not_null]
+      - name: minute
+        tests: [not_null]
+  - name: fct_exchange_spread
+    columns:
+      - name: symbol
+        tests: [not_null]
+      - name: minute
+        tests: [not_null]

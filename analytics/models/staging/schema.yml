@@ -1,0 +1,16 @@
+version: 2
+
+models:
+  - name: stg_market_events
+    description: Deduplicated ClickHouse raw events used by analytics models.
+    columns:
+      - name: event_id
+        tests:
+          - not_null
+          - unique
+      - name: exchange
+        tests: [not_null]
+      - name: event_type
+        tests: [not_null]
+      - name: event_time
+        tests: [not_null]
