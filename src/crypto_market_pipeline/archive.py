@@ -12,6 +12,7 @@ import pyarrow as pa
 import pyarrow.parquet as parquet
 
 from .models import NormalizedEvent
+from .manifest import manifest_bytes, manifest_key
 
 
 class ArchiveSink(Protocol):
@@ -75,6 +76,14 @@ class MinioParquetSink:
             io.BytesIO(payload),
             length=len(payload),
             content_type="application/vnd.apache.parquet",
+        )
+        manifest = manifest_bytes(object_key, rows)
+        self.client.put_object(
+            self.bucket,
+            manifest_key(object_key),
+            io.BytesIO(manifest),
+            length=len(manifest),
+            content_type="application/json",
         )
 
 

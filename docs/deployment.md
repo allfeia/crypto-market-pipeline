@@ -26,6 +26,8 @@ flowchart TB
         M[MinIO S3<br/>raw Parquet]
         CW[market-raw-clickhouse<br/>Kafka consumer]
         CR[ClickHouse raw<br/>raw.events]
+        R[market-reconcile<br/>manifest checker]
+        OPS[ClickHouse ops<br/>raw_reconciliation]
     end
 
     subgraph ANALYTICS[Analytics layer]
@@ -54,6 +56,9 @@ flowchart TB
     K -->|Полный поток независимо| G2
     G2 --> CW
     CW -->|Raw events<br/>commit после вставки| CR
+    M -->|JSON manifests| R
+    CR -->|Logical rows by event_id| R
+    R -->|Reconciliation result| OPS
 
     CR -->|Raw relations| D
     D -->|Analytics models| C

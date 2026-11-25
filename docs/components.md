@@ -12,6 +12,8 @@
 | ClickHouse raw | События ClickHouse consumer | Raw SQL tables | Оперативный raw-слой без бизнес-агрегаций |
 | dbt | ClickHouse raw relations | ClickHouse analytics tables | Очистка, типизация, агрегации и проверки |
 | ClickHouse analytics | dbt models | Analytics queries | Быстрые аналитические витрины |
+| `market-reconcile` | MinIO manifests и ClickHouse raw | `ops.raw_reconciliation` | Асинхронная сверка двух raw-копий |
+| ClickHouse ops | Reconciliation results | SQL audit queries | История результатов сверки |
 | Airflow | DAG schedule | Jobs | Оркестрация dbt и проверок |
 | Telegram notifier | Alert condition | Telegram message | Уведомления о спреде |
 
@@ -48,3 +50,4 @@ Kafka → вставка в ClickHouse → commit offset группы market-raw
 - dbt не получает данные напрямую из WebSocket.
 - dbt не изменяет `ClickHouse raw.events`.
 - ClickHouse analytics не смешивается с raw-таблицами.
+- Reconciliation не участвует в Kafka consumer groups и не блокирует raw ingestion.

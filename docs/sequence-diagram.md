@@ -15,6 +15,8 @@ sequenceDiagram
     participant GC as market-raw-clickhouse group
     participant CW as market-raw-clickhouse
     participant CR as ClickHouse raw
+    participant R as market-reconcile
+    participant OPS as ClickHouse ops
     participant D as dbt-clickhouse planned
     participant C as ClickHouse analytics planned
     participant AF as Airflow planned
@@ -48,6 +50,11 @@ sequenceDiagram
         CR-->>CW: Successful insert
         CW->>GC: Commit offset
     end
+
+    R->>M: Read new JSON manifests
+    R->>CR: Query logical rows by event_id
+    R->>R: Compare counts, unique IDs and digest
+    R->>OPS: Store reconciliation status
 
     CR->>D: Read raw.events
     D->>D: Build staging, intermediate and mart models

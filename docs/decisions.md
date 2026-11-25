@@ -74,6 +74,8 @@ MinIO является долговременным raw-архивом. ClickHou
 
 ## ADR-017. Сверка двух raw-копий
 
-Сверка MinIO и ClickHouse выполняется асинхронно. Archiver создаёт manifest для каждого Parquet-part с object key, row count, уникальными `event_id`, диапазоном `event_time` и hash batch-а. Ежечасно сравниваются количества, уникальные идентификаторы, временные границы и offsets по `exchange`, `symbol` и `event_type`. Полная сверка идентификаторов выполняется после сбоя и не реже одного раза в сутки.
+Сверка MinIO и ClickHouse выполняется отдельным асинхронным `market-reconcile` процессом. После успешной записи каждого Parquet-part archiver создаёт JSON manifest рядом с объектом. Manifest содержит object key, batch hash, количество строк, количество уникальных `event_id`, digest отсортированных идентификаторов, коммутативный checksum для агрегации нескольких parts, диапазоны `event_time` и `ingest_time`, а также разбивку по `exchange`, `symbol` и `event_type`.
 
-Сверка не блокирует горячий путь записи. При расхождении ClickHouse raw восстанавливается повторной вставкой из MinIO или повторным чтением Kafka, после чего выполняется дедупликация.
+Reconciler агрегирует manifests по UTC hour, `exchange`, `symbol` и `event_type`, затем сравнивает их с логическими записями ClickHouse raw после дедупликации по `event_id`. Результат сохраняется в `ops.raw_reconciliation`. Возможные статусы: `MATCH`, `MISSING_IN_CLICKHOUSE`, `EXTRA_IN_CLICKHOUSE`, `DUPLICATES_IN_CLICKHOUSE` и `METADATA_MISMATCH`.
+
+Сверка не блокирует горячий путь записи и не использует Kafka consumer groups. Старые Parquet без manifest не считаются проверенными. Срок проверки ограничен семидневным TTL ClickHouse raw. Recovery из MinIO и расписание запуска через Airflow относятся к следующему этапу.
