@@ -18,6 +18,9 @@
 - ClickHouse raw schema на `ReplacingMergeTree(ingest_time)` с TTL 7 дней.
 - dbt staging и аналитические модели свечей и межбиржевого spread.
 - 18 dbt-тестов not-null, unique и сверки аналитических моделей проходят на чистом локальном raw-потоке.
+- Manifest-файлы для новых MinIO Parquet-part и таблица `ops.raw_reconciliation`.
+- CLI `market-reconcile` для асинхронной сверки MinIO и ClickHouse raw.
+- Интеграционно проверены статусы `MATCH`, `MISSING_IN_CLICKHOUSE` и `EXTRA_IN_CLICKHOUSE` на контролируемом Kafka backlog.
 
 ## Частично реализовано
 
@@ -30,10 +33,12 @@
 
 - Production-проверка ClickHouse raw writer и масштабирование.
 - Production-проверка dbt-сверок на длительном потоке и при late events.
+- Production-проверка reconciliation на длительном потоке и при расхождениях.
 - Airflow DAGs.
 - Telegram alerts.
 - DLQ для некорректных Kafka-сообщений.
 - Production deployment и мониторинг.
-- Manifest-файлы и служебная сверка MinIO и ClickHouse.
+- Airflow-расписание reconciliation.
+- Recovery отсутствующих ClickHouse raw-событий из MinIO.
 
 Документация не должна считать планируемые компоненты реализованными, пока они не появились в коде, конфигурации и тестах.

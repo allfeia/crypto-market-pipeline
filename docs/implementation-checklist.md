@@ -67,5 +67,8 @@
 - [x] `raw.market_events` использует `ReplacingMergeTree(ingest_time)`.
 - [x] Raw writer сбрасывает буфер каждые 1 секунду или 1000 событий.
 - [x] TTL ClickHouse raw зафиксирован на 7 дней.
-- [ ] Добавить manifest-файлы для полной сверки MinIO и ClickHouse.
-- [ ] Добавить служебную таблицу результатов сверки.
+- [x] Добавить manifest-файлы для полной сверки MinIO и ClickHouse.
+- [x] Добавить служебную таблицу результатов сверки.
+- [x] Сверка сравнивает count, unique `event_id` и digest после дедупликации ClickHouse raw.
+- [ ] Запускать reconciliation по расписанию через Airflow.
+- [ ] Добавить recovery отсутствующих событий из MinIO.

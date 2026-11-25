@@ -33,6 +33,7 @@ Sequence-диаграмма находится в [docs/sequence-diagram.md](doc
 - Две независимые Kafka consumer groups для MinIO и ClickHouse raw.
 - Kafka, MinIO, ClickHouse и два collector-контейнера в Docker Compose.
 - ClickHouse raw writer и dbt-модели свечей и межбиржевого spread.
+- Manifest-файлы MinIO и CLI `market-reconcile` для сверки MinIO raw с ClickHouse raw.
 
 ## Установка
 
@@ -105,7 +106,7 @@ ClickHouse хранит две группы таблиц. `raw.market_events` п
 docker compose up -d --build kafka minio clickhouse bybit-collector okx-collector clickhouse-raw-writer
 ```
 
-Для запуска dbt установи зависимости из `analytics/requirements.txt`, скопируй `analytics/profiles.yml.example` в `~/.dbt/profiles.yml`, затем выполни:
+Для запуска dbt необходимо установить зависимости из `analytics/requirements.txt`, скопируйте `analytics/profiles.yml.example` в `~/.dbt/profiles.yml`, затем выполните:
 
 ```bash
 cd analytics
@@ -114,6 +115,20 @@ dbt test
 ```
 
 Raw ClickHouse хранится 7 дней. MinIO остаётся долговременным raw-архивом.
+
+Проверить согласованность новых raw-объектов:
+
+```bash
+.venv/bin/market-reconcile \
+  --minio-endpoint localhost:9000 \
+  --minio-bucket market-raw \
+  --clickhouse-host localhost \
+  --clickhouse-port 8123 \
+  --clickhouse-user pipeline \
+  --clickhouse-password pipeline
+```
+
+Результаты сверки записываются в `ops.raw_reconciliation`. Старые Parquet без manifest в проверку не входят.
 
 ## Тесты
 

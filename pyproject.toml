@@ -26,6 +26,7 @@ bybit-collector = "crypto_market_pipeline.main:run_bybit"
 okx-collector = "crypto_market_pipeline.main:run_okx"
 market-archiver = "crypto_market_pipeline.archiver:run"
 clickhouse-raw-writer = "crypto_market_pipeline.clickhouse_writer:run"
+market-reconcile = "crypto_market_pipeline.reconciler:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]
