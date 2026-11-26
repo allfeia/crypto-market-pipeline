@@ -37,3 +37,24 @@ CREATE TABLE IF NOT EXISTS ops.raw_reconciliation
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(checked_at)
 ORDER BY (checked_at, exchange, symbol, event_type, object_key);
+
+CREATE TABLE IF NOT EXISTS ops.trade_gap_coverage
+(
+    gap_id UUID,
+    exchange LowCardinality(String),
+    symbol LowCardinality(String),
+    requested_start DateTime64(3, 'UTC'),
+    requested_end DateTime64(3, 'UTC'),
+    source LowCardinality(String),
+    fetched_rows UInt64,
+    published_rows UInt64,
+    covered_start Nullable(DateTime64(3, 'UTC')),
+    covered_end Nullable(DateTime64(3, 'UTC')),
+    status LowCardinality(String),
+    attempts UInt8,
+    error String,
+    checked_at DateTime64(3, 'UTC')
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(checked_at)
+ORDER BY (checked_at, exchange, symbol, requested_start, gap_id);

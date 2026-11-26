@@ -6,6 +6,7 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 
+from .backfill import recover_trade_gap
 from .clients import (
     RetryableEventError,
     create_bybit_orderbook_client,
@@ -15,6 +16,7 @@ from .clients import (
 )
 from .normalizers import normalize_bybit_message, normalize_okx_message
 from .sinks import EventSink, JsonlSink, KafkaSink
+from .gap_ledger import ClickHouseGapLedger
 
 
 async def write_normalized(
@@ -35,9 +37,16 @@ async def write_normalized(
         raise RetryableEventError from error
 
 
-async def collect_exchange(exchange: str, symbol: str, sink: EventSink) -> None:
+async def collect_exchange(
+    exchange: str,
+    symbol: str,
+    sink: EventSink,
+    gap_ledger: ClickHouseGapLedger | None = None,
+) -> None:
     try:
         await sink.start()
+        if gap_ledger is not None:
+            await gap_ledger.start()
 
         if exchange == "bybit":
             async def handle_trade(message: dict) -> None:
@@ -46,8 +55,11 @@ async def collect_exchange(exchange: str, symbol: str, sink: EventSink) -> None:
             async def handle_orderbook(message: dict) -> None:
                 await write_normalized(message, normalize_bybit_message, symbol, sink)
 
+            async def handle_gap(start, end) -> None:
+                await recover_trade_gap(exchange, symbol, start, end, sink.write, gap_ledger.record if gap_ledger else None)
+
             clients = (
-                create_bybit_trade_client(symbol, handle_trade),
+                create_bybit_trade_client(symbol, handle_trade, handle_gap),
                 create_bybit_orderbook_client(symbol, handle_orderbook),
             )
         else:
@@ -57,13 +69,18 @@ async def collect_exchange(exchange: str, symbol: str, sink: EventSink) -> None:
             async def handle_orderbook(message: dict) -> None:
                 await write_normalized(message, normalize_okx_message, symbol, sink)
 
+            async def handle_gap(start, end) -> None:
+                await recover_trade_gap(exchange, symbol, start, end, sink.write, gap_ledger.record if gap_ledger else None)
+
             clients = (
-                create_okx_trade_client(symbol, handle_trade),
+                create_okx_trade_client(symbol, handle_trade, handle_gap),
                 create_okx_orderbook_client(symbol, handle_orderbook),
             )
 
         await asyncio.gather(*(client.run() for client in clients))
     finally:
+        if gap_ledger is not None:
+            await gap_ledger.close()
         await sink.close()
 
 
@@ -76,6 +93,10 @@ def build_parser(exchange: str | None = None) -> argparse.ArgumentParser:
     parser.add_argument("--sink", choices=("jsonl", "kafka"), default="jsonl")
     parser.add_argument("--kafka-bootstrap-servers", default="localhost:9092")
     parser.add_argument("--kafka-client-id", default=None)
+    parser.add_argument("--coverage-clickhouse-host", default=None)
+    parser.add_argument("--coverage-clickhouse-port", type=int, default=8123)
+    parser.add_argument("--coverage-clickhouse-user", default="pipeline")
+    parser.add_argument("--coverage-clickhouse-password", default="pipeline")
     return parser
 
 
@@ -90,8 +111,17 @@ def run_exchange(exchange: str | None = None) -> None:
     else:
         sink = JsonlSink(args.output_dir / selected_exchange)
 
+    gap_ledger = None
+    if args.coverage_clickhouse_host:
+        gap_ledger = ClickHouseGapLedger(
+            args.coverage_clickhouse_host,
+            args.coverage_clickhouse_port,
+            args.coverage_clickhouse_user,
+            args.coverage_clickhouse_password,
+        )
+
     try:
-        asyncio.run(collect_exchange(selected_exchange, args.symbol, sink))
+        asyncio.run(collect_exchange(selected_exchange, args.symbol, sink, gap_ledger))
     except KeyboardInterrupt:
         logging.info("%s collector stopped", selected_exchange)
 

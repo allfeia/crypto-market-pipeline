@@ -8,6 +8,7 @@ import uuid
 
 
 EVENT_NAMESPACE = uuid.UUID("3e8f0d72-9ed5-4f90-8c59-4a21d6d5f4ba")
+GAP_NAMESPACE = uuid.UUID("c9c1a5cc-3b6e-4e60-b82f-2d0e5d65a6ef")
 
 
 def utc_now() -> datetime:
@@ -16,6 +17,18 @@ def utc_now() -> datetime:
 
 def isoformat_millis(value: datetime) -> str:
     return value.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def deterministic_gap_id(exchange: str, symbol: str, start: datetime, end: datetime) -> str:
+    identity = "|".join(
+        (
+            exchange,
+            symbol,
+            isoformat_millis(start),
+            isoformat_millis(end),
+        )
+    )
+    return str(uuid.uuid5(GAP_NAMESPACE, identity))
 
 
 @dataclass(slots=True)

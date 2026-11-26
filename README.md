@@ -34,6 +34,9 @@ Sequence-диаграмма находится в [docs/sequence-diagram.md](doc
 - Kafka, MinIO, ClickHouse и два collector-контейнера в Docker Compose.
 - ClickHouse raw writer и dbt-модели свечей и межбиржевого spread.
 - Manifest-файлы MinIO и CLI `market-reconcile` для сверки MinIO raw с ClickHouse raw.
+- Trade REST-backfill после reconnect WebSocket с публикацией в `market.trades` и журналом покрытия в `ops.trade_gap_coverage`.
+- OKX backfill использует pagination `history-trades`. Bybit использует recent-trade для немедленного fallback и официальный daily archive для полного восстановления завершённых UTC-дней.
+- Gap не помечается восстановленным без доказанного покрытия. Возможны статусы `RECOVERED`, `PARTIAL` и `UNRECOVERED`.
 
 ## Установка
 
