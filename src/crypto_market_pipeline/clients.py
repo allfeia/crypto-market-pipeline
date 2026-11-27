@@ -4,12 +4,15 @@ import asyncio
 import json
 import logging
 from collections.abc import Awaitable, Callable
+from datetime import datetime, timezone
 from typing import Any
 
 from websockets.asyncio.client import ClientConnection, connect
 
 logger = logging.getLogger(__name__)
 EventHandler = Callable[[Any], Awaitable[None]]
+GapHandler = Callable[[datetime, datetime], Awaitable[None]]
+EventTimeExtractor = Callable[[dict[str, Any]], datetime | None]
 
 
 class RetryableEventError(Exception):
@@ -17,31 +20,53 @@ class RetryableEventError(Exception):
 
 
 class ReconnectingWebSocketClient:
-    def __init__(self, name: str, url: str, subscription: dict[str, Any], handler: EventHandler) -> None:
+    def __init__(
+        self,
+        name: str,
+        url: str,
+        subscription: dict[str, Any],
+        handler: EventHandler,
+        on_gap: GapHandler | None = None,
+        event_time_extractor: EventTimeExtractor | None = None,
+    ) -> None:
         self.name = name
         self.url = url
         self.subscription = subscription
         self.handler = handler
+        self.on_gap = on_gap
+        self.event_time_extractor = event_time_extractor
 
     async def run(self) -> None:
         delay = 1
         while True:
+            last_message_at: datetime | None = None
             try:
                 logger.info("Connecting to %s", self.name)
                 async with connect(self.url, ping_interval=20, ping_timeout=20) as websocket:
                     await websocket.send(json.dumps(self.subscription))
                     logger.info("Subscribed to %s", self.name)
                     delay = 1
-                    await self._read_messages(websocket)
+                    last_message_at = await self._read_messages(websocket)
+                    if last_message_at is not None:
+                        raise ConnectionError(f"{self.name} stream closed")
             except asyncio.CancelledError:
                 raise
             except Exception:
                 logger.exception("%s connection failed", self.name)
                 logger.info("Reconnecting to %s in %s seconds", self.name, delay)
+                if self.on_gap and last_message_at is not None:
+                    gap_start = last_message_at
+                    gap_end = datetime.now(timezone.utc)
+                    if gap_start < gap_end:
+                        try:
+                            await self.on_gap(gap_start, gap_end)
+                        except Exception:
+                            logger.exception("REST gap recovery failed for %s", self.name)
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 30)
 
-    async def _read_messages(self, websocket: ClientConnection) -> None:
+    async def _read_messages(self, websocket: ClientConnection) -> datetime | None:
+        last_event_time: datetime | None = None
         async for raw_message in websocket:
             if raw_message == "ping":
                 await websocket.send("pong")
@@ -65,6 +90,10 @@ class ReconnectingWebSocketClient:
             while True:
                 try:
                     await self.handler(message)
+                    if self.event_time_extractor is not None:
+                        extracted = self.event_time_extractor(message)
+                        if extracted is not None:
+                            last_event_time = extracted
                     break
                 except asyncio.CancelledError:
                     raise
@@ -75,9 +104,29 @@ class ReconnectingWebSocketClient:
                 except Exception:
                     logger.exception("Discarding invalid message from %s", self.name)
                     break
+        return last_event_time
 
 
-def create_bybit_trade_client(symbol: str, handler: EventHandler) -> ReconnectingWebSocketClient:
+def _bybit_trade_event_time(message: dict[str, Any]) -> datetime | None:
+    data = message.get("data")
+    if not message.get("topic", "").startswith("publicTrade.") or not isinstance(data, list):
+        return None
+    values = [item.get("T") for item in data if item.get("T") is not None]
+    if not values:
+        return None
+    return datetime.fromtimestamp(max(int(value) for value in values) / 1000, tz=timezone.utc)
+
+
+def _okx_trade_event_time(message: dict[str, Any]) -> datetime | None:
+    if message.get("arg", {}).get("channel") != "trades" or not isinstance(message.get("data"), list):
+        return None
+    values = [item.get("ts") for item in message["data"] if item.get("ts") is not None]
+    if not values:
+        return None
+    return datetime.fromtimestamp(max(int(value) for value in values) / 1000, tz=timezone.utc)
+
+
+def create_bybit_trade_client(symbol: str, handler: EventHandler, on_gap: GapHandler | None = None) -> ReconnectingWebSocketClient:
     return ReconnectingWebSocketClient(
         name="bybit trades",
         url="wss://stream.bybit.com/v5/public/spot",
@@ -86,6 +135,8 @@ def create_bybit_trade_client(symbol: str, handler: EventHandler) -> Reconnectin
             "args": [f"publicTrade.{symbol}"],
         },
         handler=handler,
+        on_gap=on_gap,
+        event_time_extractor=_bybit_trade_event_time,
     )
 
 
@@ -101,7 +152,7 @@ def create_bybit_orderbook_client(symbol: str, handler: EventHandler) -> Reconne
     )
 
 
-def create_okx_trade_client(symbol: str, handler: EventHandler) -> ReconnectingWebSocketClient:
+def create_okx_trade_client(symbol: str, handler: EventHandler, on_gap: GapHandler | None = None) -> ReconnectingWebSocketClient:
     okx_symbol = symbol[:-4] + "-" + symbol[-4:] if symbol.endswith("USDT") else symbol
     return ReconnectingWebSocketClient(
         name="okx trades",
@@ -111,6 +162,8 @@ def create_okx_trade_client(symbol: str, handler: EventHandler) -> ReconnectingW
             "args": [{"channel": "trades", "instId": okx_symbol}],
         },
         handler=handler,
+        on_gap=on_gap,
+        event_time_extractor=_okx_trade_event_time,
     )
 
 

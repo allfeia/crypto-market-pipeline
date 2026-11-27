@@ -38,9 +38,13 @@
 
 ## Gap recovery и orderbook
 
-- [ ] Фиксируется окно разрыва WebSocket.
-- [ ] Пропущенные сделки дозагружаются через REST API.
-- [ ] Backfill публикует события в Kafka с тем же контрактом.
+- [x] Фиксируется окно разрыва trade-WebSocket.
+- [x] Пропущенные trades дозагружаются через публичный REST API Bybit и OKX.
+- [x] Backfill публикует события в Kafka с тем же контрактом и `event_id`.
+- [x] OKX backfill поддерживает pagination через `history-trades`.
+- [x] Bybit backfill читает официальный daily public archive для завершённых UTC-дней.
+- [x] Полное покрытие не маскируется под успех: ведётся `ops.trade_gap_coverage` со статусами `STARTED`, `RECOVERED`, `PARTIAL`, `UNRECOVERED`.
+- [ ] Airflow повторно обрабатывает `PARTIAL` gaps после публикации отложенного Bybit archive.
 - [ ] Проверяется непрерывность sequence стакана.
 - [ ] При gap выполняется повторный snapshot.
 
@@ -51,7 +55,7 @@
 - [x] dbt-тесты проверяют not-null и unique для текущих аналитических моделей.
 - [x] dbt-тесты сверяют свечи с trades каждой биржи и spread между биржами.
 - [x] ClickHouse разделяет raw-таблицы и подготовленные analytics-витрины.
-- [ ] Airflow запускает backfill, dbt и тесты.
+- [ ] Airflow запускает dbt, тесты и reconciliation по расписанию.
 - [ ] Telegram получает только подтверждённые alert-события.
 
 ## Definition of done
@@ -67,5 +71,8 @@
 - [x] `raw.market_events` использует `ReplacingMergeTree(ingest_time)`.
 - [x] Raw writer сбрасывает буфер каждые 1 секунду или 1000 событий.
 - [x] TTL ClickHouse raw зафиксирован на 7 дней.
-- [ ] Добавить manifest-файлы для полной сверки MinIO и ClickHouse.
-- [ ] Добавить служебную таблицу результатов сверки.
+- [x] Добавить manifest-файлы для полной сверки MinIO и ClickHouse.
+- [x] Добавить служебную таблицу результатов сверки.
+- [x] Сверка сравнивает count, unique `event_id` и digest после дедупликации ClickHouse raw.
+- [ ] Запускать reconciliation по расписанию через Airflow.
+- [ ] Добавить recovery отсутствующих событий из MinIO.

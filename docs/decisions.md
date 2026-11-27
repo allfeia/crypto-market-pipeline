@@ -30,7 +30,7 @@ MinIO и ClickHouse raw используют разные consumer groups: `mark
 
 ## ADR-008. Граница текущего этапа
 
-Текущий этап заканчивается на доставке Kafka-событий в MinIO и ClickHouse raw. dbt, ClickHouse analytics, Airflow, REST-backfill и Telegram добавляются отдельными этапами.
+Текущий этап заканчивается на доставке Kafka-событий в MinIO и ClickHouse raw, включая проверяемое восстановление trade gaps после reconnect. dbt, ClickHouse analytics, Airflow и Telegram добавляются отдельными этапами.
 
 ## ADR-009. Идемпотентная запись Parquet
 
@@ -74,6 +74,34 @@ MinIO является долговременным raw-архивом. ClickHou
 
 ## ADR-017. Сверка двух raw-копий
 
-Сверка MinIO и ClickHouse выполняется асинхронно. Archiver создаёт manifest для каждого Parquet-part с object key, row count, уникальными `event_id`, диапазоном `event_time` и hash batch-а. Ежечасно сравниваются количества, уникальные идентификаторы, временные границы и offsets по `exchange`, `symbol` и `event_type`. Полная сверка идентификаторов выполняется после сбоя и не реже одного раза в сутки.
+Сверка MinIO и ClickHouse выполняется отдельным асинхронным `market-reconcile` процессом. После успешной записи каждого Parquet-part archiver создаёт JSON manifest рядом с объектом. Manifest содержит object key, batch hash, количество строк, количество уникальных `event_id`, digest отсортированных идентификаторов, коммутативный checksum для агрегации нескольких parts, диапазоны `event_time` и `ingest_time`, а также разбивку по `exchange`, `symbol` и `event_type`.
 
-Сверка не блокирует горячий путь записи. При расхождении ClickHouse raw восстанавливается повторной вставкой из MinIO или повторным чтением Kafka, после чего выполняется дедупликация.
+Reconciler агрегирует manifests по UTC hour, `exchange`, `symbol` и `event_type`, затем сравнивает их с логическими записями ClickHouse raw после дедупликации по `event_id`. Результат сохраняется в `ops.raw_reconciliation`. Возможные статусы: `MATCH`, `MISSING_IN_CLICKHOUSE`, `EXTRA_IN_CLICKHOUSE`, `DUPLICATES_IN_CLICKHOUSE` и `METADATA_MISMATCH`.
+
+Сверка не блокирует горячий путь записи и не использует Kafka consumer groups. Старые Parquet без manifest не считаются проверенными. Срок проверки ограничен семидневным TTL ClickHouse raw. Recovery из MinIO и расписание запуска через Airflow относятся к следующему этапу.
+
+## ADR-018. REST-backfill после разрыва WebSocket
+
+При разрыве trade-WebSocket collector фиксирует окно между временем последней успешно обработанной сделки и моментом восстановления соединения. Для Bybit и OKX выполняется публичный запрос trades, ответ приводится к тому же `NormalizedEvent` и публикуется в `market.trades` через существующий Kafka sink.
+
+Backfill выполняется внутри соответствующего exchange collector и не создаёт отдельный контейнер или Kafka consumer group. REST-ответ ограничивается окном разрыва, а перекрытие с WebSocket допускается намеренно. Одинаковые сделки получают тот же UUID5 `event_id` и устраняются downstream-дедупликацией.
+
+Для OKX backfill использует `history-trades` с pagination по trade ID и не считается полным, если пагинация не достигла начала gap. Для Bybit recent-trade используется только как немедленный fallback. Полным источником для завершённых UTC-дней является официальный public archive `public.bybit.com/spot/<SYMBOL>/<SYMBOL>_<YYYY-MM-DD>.csv.gz` с trade ID, timestamp, price, volume и side. Если дневной архив ещё не опубликован, событие публикуется, но gap получает статус `PARTIAL` и не считается восстановленным.
+
+Источники формата и ограничений: [Bybit Get Recent Public Trades](https://bybit-exchange.github.io/docs/v5/market/recent-trade), [Bybit public market archive](https://public.bybit.com/), [OKX Get trades history](https://www.okx.com/docs-v5/en/#rest-api-market-data-get-trades-history).
+
+Восстановление orderbook delta не входит в этот этап. Для него нужен отдельный snapshot и проверка sequence continuity.
+
+## ADR-019. Проверяемая гарантия восстановления trade gaps
+
+Каждый gap получает детерминированный `gap_id` и записывается в `ops.trade_gap_coverage` до начала запроса со статусом `STARTED`. После запроса и публикации событий фиксируется один из терминальных статусов:
+
+- `RECOVERED` — источник доказал покрытие всего запрошенного интервала, а события успешно опубликованы в Kafka;
+- `PARTIAL` — события частично получены или источник не позволяет доказать полное покрытие, например Bybit daily archive ещё не появился или OKX достиг лимита страниц;
+- `UNRECOVERED` — источник или публикация недоступны после повторных попыток.
+
+Нулевое количество событий никогда не считается доказательством восстановления. Повторная попытка использует тот же `gap_id`, а события проходят тот же `NormalizedEvent → KafkaSink → market.trades` путь. MinIO и ClickHouse raw получают backfill независимо через свои consumer groups. Журнал в ClickHouse хранит источник, число полученных и опубликованных событий, границы фактического покрытия, число попыток и ошибку.
+
+Запись журнала повторяется с exponential backoff. В production collector запускается только вместе с доступным ClickHouse ops, потому что отсутствие журнала делает восстановление непроверяемым. При чтении актуальный статус выбирается как `argMax(status, checked_at)` по `gap_id`, поскольку история `STARTED` и терминальных статусов хранится отдельными строками.
+
+До следующего подключения collector дожидается завершения текущей попытки backfill. Это увеличивает задержку переподключения при большом архиве, но не создаёт второй неконтролируемый gap параллельно незавершённому восстановлению. Полученные сделки идемпотентны по `event_id`, поэтому последующая повторная попытка безопасна.

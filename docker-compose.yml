@@ -51,9 +51,19 @@ services:
       - BTCUSDT
       - --kafka-bootstrap-servers
       - kafka:29092
+      - --coverage-clickhouse-host
+      - clickhouse
+      - --coverage-clickhouse-port
+      - "8123"
+      - --coverage-clickhouse-user
+      - ${CLICKHOUSE_USER:-pipeline}
+      - --coverage-clickhouse-password
+      - ${CLICKHOUSE_PASSWORD:-pipeline}
     depends_on:
       kafka-init:
         condition: service_completed_successfully
+      clickhouse:
+        condition: service_healthy
     restart: unless-stopped
 
   okx-collector:
@@ -67,9 +77,19 @@ services:
       - BTCUSDT
       - --kafka-bootstrap-servers
       - kafka:29092
+      - --coverage-clickhouse-host
+      - clickhouse
+      - --coverage-clickhouse-port
+      - "8123"
+      - --coverage-clickhouse-user
+      - ${CLICKHOUSE_USER:-pipeline}
+      - --coverage-clickhouse-password
+      - ${CLICKHOUSE_PASSWORD:-pipeline}
     depends_on:
       kafka-init:
         condition: service_completed_successfully
+      clickhouse:
+        condition: service_healthy
     restart: unless-stopped
 
   minio:

@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timezone
 
 from crypto_market_pipeline.clients import (
     ReconnectingWebSocketClient,
@@ -59,3 +60,16 @@ def test_client_answers_application_level_ping() -> None:
 
     assert websocket.sent == ["pong"]
     assert received[0]["topic"] == "ignored"
+
+
+def test_trade_client_tracks_exchange_event_time_for_gap_start() -> None:
+    client = create_bybit_trade_client("BTCUSDT", handle_message)
+    websocket = FakeWebSocket(
+        [
+            '{"topic":"publicTrade.BTCUSDT","data":[{"T":"1795687200123"}]}'
+        ]
+    )
+
+    last_event_time = asyncio.run(client._read_messages(websocket))
+
+    assert last_event_time == datetime.fromtimestamp(1795687200.123, tz=timezone.utc)

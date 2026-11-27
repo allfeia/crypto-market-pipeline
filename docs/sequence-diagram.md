@@ -8,6 +8,8 @@ sequenceDiagram
     participant OWS as OKX WebSocket
     participant BC as bybit-collector
     participant OC as okx-collector
+    participant BR as public REST backfill
+    participant BA as Bybit public archive
     participant K as Kafka
     participant GM as market-raw-minio group
     participant A as market-raw-minio
@@ -15,6 +17,8 @@ sequenceDiagram
     participant GC as market-raw-clickhouse group
     participant CW as market-raw-clickhouse
     participant CR as ClickHouse raw
+    participant R as market-reconcile
+    participant OPS as ClickHouse ops
     participant D as dbt-clickhouse planned
     participant C as ClickHouse analytics planned
     participant AF as Airflow planned
@@ -49,6 +53,11 @@ sequenceDiagram
         CW->>GC: Commit offset
     end
 
+    R->>M: Read new JSON manifests
+    R->>CR: Query logical rows by event_id
+    R->>R: Compare counts, unique IDs and digest
+    R->>OPS: Store reconciliation status
+
     CR->>D: Read raw.events
     D->>D: Build staging, intermediate and mart models
     D->>C: Write analytics tables
@@ -60,7 +69,22 @@ sequenceDiagram
         BWS--xBC: Connection lost
         BC->>BC: Reconnect with exponential backoff
         BC->>BWS: Resubscribe
-        Note over BC,BWS: REST gap recovery is planned
+        BC->>OPS: Write gap STARTED
+        alt Bybit archive is available for every UTC day
+            BC->>BA: Read daily/monthly public trade archive
+            BA-->>BC: Complete trade rows for gap
+            BC->>BC: Mark coverage RECOVERED
+        else Archive not yet published
+            BC->>BR: Request recent trades for immediate fallback
+            BR-->>BC: Recent normalized backfill trades
+            BC->>BC: Mark coverage PARTIAL
+        else OKX history
+            BC->>BR: Paginate history-trades to gap start
+            BR-->>BC: Complete or partial normalized trades
+        end
+        BC->>K: Publish overlap-safe events to market.trades
+        BC->>OPS: Write terminal coverage status
+        Note over BC,BWS: Orderbook snapshot recovery is planned
     else No interruption
         BC->>BC: Continue collecting
     end

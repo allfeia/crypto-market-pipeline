@@ -6,13 +6,14 @@ flowchart TB
         BYBIT[Bybit WebSocket]
         OKX[OKX WebSocket]
         BYBIT_REST[Bybit REST API]
+        BYBIT_ARCHIVE[Bybit public archive<br/>daily CSV.gz]
         OKX_REST[OKX REST API]
     end
 
     subgraph COLLECTORS[Collector-сервисы]
         B_COL[bybit-collector<br/>trades task<br/>orderbook task]
         O_COL[okx-collector<br/>trades task<br/>orderbook task]
-        BACKFILL[REST backfill job]
+        BACKFILL[trade REST backfill<br/>inside collector]
     end
 
     subgraph STREAM[Поток событий]
@@ -26,6 +27,8 @@ flowchart TB
         M[MinIO S3<br/>raw Parquet]
         CW[market-raw-clickhouse<br/>Kafka consumer]
         CR[ClickHouse raw<br/>raw.events]
+        R[market-reconcile<br/>manifest checker]
+        OPS[ClickHouse ops<br/>raw_reconciliation<br/>trade_gap_coverage]
     end
 
     subgraph ANALYTICS[Analytics layer]
@@ -41,6 +44,7 @@ flowchart TB
     BYBIT -->|WebSocket JSON| B_COL
     OKX -->|WebSocket JSON| O_COL
     BYBIT_REST -->|Пропущенные сделки| BACKFILL
+    BYBIT_ARCHIVE -->|Полный архив завершённых UTC-дней| BACKFILL
     OKX_REST -->|Пропущенные сделки| BACKFILL
 
     B_COL -->|Нормализованные события| K
@@ -54,6 +58,9 @@ flowchart TB
     K -->|Полный поток независимо| G2
     G2 --> CW
     CW -->|Raw events<br/>commit после вставки| CR
+    M -->|JSON manifests| R
+    CR -->|Logical rows by event_id| R
+    R -->|Reconciliation result| OPS
 
     CR -->|Raw relations| D
     D -->|Analytics models| C
