@@ -8,10 +8,12 @@ from typing import Any
 
 from websockets.asyncio.client import ClientConnection, connect
 
-from .normalizers import normalize_bybit_message, normalize_okx_message
-
 logger = logging.getLogger(__name__)
 EventHandler = Callable[[Any], Awaitable[None]]
+
+
+class RetryableEventError(Exception):
+    """Temporary sink failure that should pause delivery and be retried."""
 
 
 class ReconnectingWebSocketClient:
@@ -41,38 +43,85 @@ class ReconnectingWebSocketClient:
 
     async def _read_messages(self, websocket: ClientConnection) -> None:
         async for raw_message in websocket:
+            if raw_message == "ping":
+                await websocket.send("pong")
+                continue
+
             try:
                 message = json.loads(raw_message)
-                await self.handler(message)
             except json.JSONDecodeError:
                 logger.warning("%s sent a non-JSON message", self.name)
-            except Exception:
-                logger.exception("Failed to handle message from %s", self.name)
+                continue
+
+            if not isinstance(message, dict):
+                logger.warning("%s sent a JSON value instead of an object", self.name)
+                continue
+
+            if message.get("op") == "ping":
+                await websocket.send(json.dumps({"op": "pong"}))
+                continue
+
+            delay = 1
+            while True:
+                try:
+                    await self.handler(message)
+                    break
+                except asyncio.CancelledError:
+                    raise
+                except RetryableEventError:
+                    logger.exception("Failed to handle message from %s", self.name)
+                    await asyncio.sleep(delay)
+                    delay = min(delay * 2, 30)
+                except Exception:
+                    logger.exception("Discarding invalid message from %s", self.name)
+                    break
 
 
-def create_bybit_client(symbol: str, handler: EventHandler) -> ReconnectingWebSocketClient:
+def create_bybit_trade_client(symbol: str, handler: EventHandler) -> ReconnectingWebSocketClient:
     return ReconnectingWebSocketClient(
-        name="bybit",
+        name="bybit trades",
         url="wss://stream.bybit.com/v5/public/spot",
         subscription={
             "op": "subscribe",
-            "args": [f"publicTrade.{symbol}", f"orderbook.50.{symbol}"],
+            "args": [f"publicTrade.{symbol}"],
         },
         handler=handler,
     )
 
 
-def create_okx_client(symbol: str, handler: EventHandler) -> ReconnectingWebSocketClient:
+def create_bybit_orderbook_client(symbol: str, handler: EventHandler) -> ReconnectingWebSocketClient:
+    return ReconnectingWebSocketClient(
+        name="bybit orderbook",
+        url="wss://stream.bybit.com/v5/public/spot",
+        subscription={
+            "op": "subscribe",
+            "args": [f"orderbook.50.{symbol}"],
+        },
+        handler=handler,
+    )
+
+
+def create_okx_trade_client(symbol: str, handler: EventHandler) -> ReconnectingWebSocketClient:
     okx_symbol = symbol[:-4] + "-" + symbol[-4:] if symbol.endswith("USDT") else symbol
     return ReconnectingWebSocketClient(
-        name="okx",
+        name="okx trades",
         url="wss://wsus.okx.com/ws/v5/public",
         subscription={
             "op": "subscribe",
-            "args": [
-                {"channel": "trades", "instId": okx_symbol},
-                {"channel": "books5", "instId": okx_symbol},
-            ],
+            "args": [{"channel": "trades", "instId": okx_symbol}],
+        },
+        handler=handler,
+    )
+
+
+def create_okx_orderbook_client(symbol: str, handler: EventHandler) -> ReconnectingWebSocketClient:
+    okx_symbol = symbol[:-4] + "-" + symbol[-4:] if symbol.endswith("USDT") else symbol
+    return ReconnectingWebSocketClient(
+        name="okx orderbook",
+        url="wss://wsus.okx.com/ws/v5/public",
+        subscription={
+            "op": "subscribe",
+            "args": [{"channel": "books5", "instId": okx_symbol}],
         },
         handler=handler,
     )

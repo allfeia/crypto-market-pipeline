@@ -41,6 +41,7 @@ def normalize_bybit_message(message: dict[str, Any], symbol: str) -> list[Normal
     if topic.startswith("orderbook.") and isinstance(data, dict):
         update_id = data.get("u")
         event_time = message.get("ts") or data.get("cts")
+        raw_message = message
         if update_id is None or event_time is None:
             return []
         return [
@@ -57,7 +58,7 @@ def normalize_bybit_message(message: dict[str, Any], symbol: str) -> list[Normal
                     "sequence": data.get("seq"),
                     "bids": data.get("b", []),
                     "asks": data.get("a", []),
-                    "raw": message,
+                    "raw": raw_message,
                 },
             )
         ]
